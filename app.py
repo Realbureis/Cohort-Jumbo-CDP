@@ -3,18 +3,15 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-# Configuração da página para aproveitar o espaço lateral
-st.set_page_config(page_title="Jumbo CDP - Análise de Cohort", layout="wide")
+# Configuração da página
+st.set_page_config(page_title="Jumbo CDP - Cohort Consolidado", layout="wide")
 
-st.title("📊 Consilidação de Cohort - Pedidos Enviados")
-st.markdown("""
-Arraste as **3 planilhas** (ou mais) abaixo. O sistema irá unificar os dados, filtrar apenas os pedidos 
-com status **'enviados'** e calcular a retenção baseada no **'código do cliente'**.
-""")
+st.title("📊 Análise de Cohort - Pedidos Enviados")
+st.markdown("Consolidação de múltiplas planilhas para visualização de retenção.")
 
-# 1. Upload de múltiplos arquivos
+# 1. Upload de Múltiplos Arquivos
 uploaded_files = st.file_uploader(
-    "Selecione seus arquivos CSV ou Excel", 
+    "Selecione as 3 planilhas (CSV ou Excel)", 
     type=['csv', 'xlsx'], 
     accept_multiple_files=True
 )
@@ -22,83 +19,82 @@ uploaded_files = st.file_uploader(
 if uploaded_files:
     dfs_list = []
     
-    # Processando cada arquivo subido
     for file in uploaded_files:
         try:
             if file.name.endswith('.csv'):
-                # Caso o CSV use ponto e vírgula como separador (comum em exportações brasileiras)
-                # tentei adicionar um tratamento básico aqui
+                # sep=None com engine python detecta automaticamente se é , ou ;
                 temp_df = pd.read_csv(file, sep=None, engine='python')
             else:
                 temp_df = pd.read_excel(file)
             
-            # Padronizando nomes de colunas (removendo espaços e deixando minusculo)
-            # Isso ajuda se uma planilha tiver "Status" e outra "status"
-            temp_df.columns = [c.strip().lower() for c in temp_df.columns]
+            # Limpeza rápida: remove espaços extras dos nomes das colunas
+            temp_df.columns = [c.strip() for c in temp_df.columns]
             dfs_list.append(temp_df)
             st.sidebar.success(f"✅ {file.name} carregado")
         except Exception as e:
             st.sidebar.error(f"❌ Erro ao ler {file.name}: {e}")
 
-    if len(dfs_list) > 0:
-        # 2. Concatenando tudo
-        df_raw = pd.concat(dfs_list, ignore_index=True)
+    if dfs_list:
+        # Consolida tudo em um único DataFrame
+        df_full = pd.concat(dfs_list, ignore_index=True)
         
         try:
-            # Conferindo nomes exatos após normalização
-            # Esperamos: 'status', 'código do cliente', 'data'
+            # 2. Filtro de Status
+            # Filtra apenas os pedidos com status 'enviados' (independente de maiúsculas/minúsculas)
+            df = df_full[df_full['status'].astype(str).str.lower() == 'enviados'].copy()
             
-            # 3. Filtragem e Conversão
-            df = df_raw[df_raw['status'].astype(str).str.lower() == 'enviados'].copy()
+            # 3. Tratamento de Datas
             df['data'] = pd.to_datetime(df['data'], errors='coerce')
-            df = df.dropna(subset=['data']) # Remove linhas com data inválida
+            df = df.dropna(subset=['data'])
             
-            # 4. Cálculo do Cohort
-            # Mês da transação
+            # 4. Lógica de Cohort
+            # Nome da coluna ajustado para [Codigo Cliente]
+            col_cliente = 'Codigo Cliente'
+            
+            # Período do pedido (Mês/Ano)
             df['mes_pedido'] = df['data'].dt.to_period('M')
             
-            # Mês da primeira compra do cliente (considerando todo o histórico consolidado)
-            df['cohort_group'] = df.groupby('Codigo Cliente')['data'].transform('min').dt.to_period('M')
+            # Mês da primeira compra do cliente (considerando o histórico total das 3 planilhas)
+            df['cohort_group'] = df.groupby(col_cliente)['data'].transform('min').dt.to_period('M')
             
-            # Índice de meses (0, 1, 2...)
+            # Cálculo do Índice (Mês 0, Mês 1, Mês 2...)
             df['cohort_index'] = (df['mes_pedido'].dt.year - df['cohort_group'].dt.year) * 12 + \
                                  (df['mes_pedido'].dt.month - df['cohort_group'].dt.month)
 
-            # 5. Criação da Matriz
-            cohort_counts = df.groupby(['cohort_group', 'cohort_index'])['Codigo Cliente'].nunique().reset_index()
-            cohort_pivot = cohort_counts.pivot(index='cohort_group', columns='cohort_index', values='Codigo Cliente')
+            # 5. Criação da Matriz de Retenção
+            cohort_data = df.groupby(['cohort_group', 'cohort_index'])[col_cliente].nunique().reset_index()
+            cohort_pivot = cohort_data.pivot(index='cohort_group', columns='cohort_index', values=col_cliente)
 
-            # 6. Cálculo da Retenção em %
+            # Cálculo em porcentagem
             cohort_size = cohort_pivot.iloc[:, 0]
             retention = cohort_pivot.divide(cohort_size, axis=0)
             retention.index = retention.index.astype(str)
 
-            # --- Visualização ---
-            col1, col2 = st.columns([3, 1])
+            # 6. Visualização
+            st.subheader("Mapa de Calor: Retenção por Safra de Clientes")
+            
+            fig, ax = plt.subplots(figsize=(14, 10))
+            sns.heatmap(retention, 
+                        annot=True, 
+                        fmt='.0%', 
+                        cmap='YlGnBu', 
+                        ax=ax)
+            
+            plt.title('Taxa de Retenção (%) - Base Jumbo CDP')
+            plt.xlabel('Meses após a primeira compra')
+            plt.ylabel('Mês de Aquisição (Cohort)')
+            st.pyplot(fig)
 
-            with col1:
-                st.subheader("Mapa de Calor de Retenção")
-                fig, ax = plt.subplots(figsize=(12, 8))
-                sns.heatmap(retention, annot=True, fmt='.0%', cmap='YlGnBu', ax=ax)
-                plt.title('Retenção de Clientes (%)')
-                plt.xlabel('Meses após a 1ª compra')
-                plt.ylabel('Mês de Aquisição')
-                st.pyplot(fig)
-
-            with col2:
-                st.subheader("Métricas Gerais")
-                st.metric("Total de Pedidos Enviados", len(df))
-                st.metric("Clientes Únicos", df['Codigo Cliente'].nunique())
-                st.metric("Arquivos Processados", len(uploaded_files))
-
-            # Opção de baixar os dados processados
+            # Métricas rápidas no rodapé
             st.divider()
-            if st.checkbox("Ver matriz numérica bruta"):
-                st.dataframe(cohort_pivot)
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Clientes Únicos (Enviados)", df[col_cliente].nunique())
+            m2.metric("Total de Pedidos Processados", len(df))
+            m3.metric("Período Analisado", f"{df['data'].min().strftime('%m/%Y')} até {df['data'].max().strftime('%m/%Y')}")
 
         except KeyError as e:
-            st.error(f"Erro: Não encontrei a coluna {e}. Verifique se os nomes na planilha estão corretos.")
+            st.error(f"Erro: Não encontrei a coluna {e}. Verifique se o nome na planilha é exatamente 'status', 'data' ou 'Codigo Cliente'.")
     else:
-        st.warning("Nenhum dado válido foi extraído dos arquivos.")
+        st.warning("Aguardando o upload das planilhas.")
 else:
-    st.info("Aguardando o upload das 3 planilhas para gerar a inteligência de dados.")
+    st.info("Suba as 3 planilhas de 6 meses para consolidar os dados e gerar o gráfico.")
