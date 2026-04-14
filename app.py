@@ -58,15 +58,15 @@ if uploaded_files:
             df['mes_pedido'] = df['data'].dt.to_period('M')
             
             # Mês da primeira compra do cliente (considerando todo o histórico consolidado)
-            df['cohort_group'] = df.groupby('código do cliente')['data'].transform('min').dt.to_period('M')
+            df['cohort_group'] = df.groupby('Codigo Cliente')['data'].transform('min').dt.to_period('M')
             
             # Índice de meses (0, 1, 2...)
             df['cohort_index'] = (df['mes_pedido'].dt.year - df['cohort_group'].dt.year) * 12 + \
                                  (df['mes_pedido'].dt.month - df['cohort_group'].dt.month)
 
             # 5. Criação da Matriz
-            cohort_counts = df.groupby(['cohort_group', 'cohort_index'])['código do cliente'].nunique().reset_index()
-            cohort_pivot = cohort_counts.pivot(index='cohort_group', columns='cohort_index', values='código do cliente')
+            cohort_counts = df.groupby(['cohort_group', 'cohort_index'])['Codigo Cliente'].nunique().reset_index()
+            cohort_pivot = cohort_counts.pivot(index='cohort_group', columns='cohort_index', values='Codigo Cliente')
 
             # 6. Cálculo da Retenção em %
             cohort_size = cohort_pivot.iloc[:, 0]
@@ -88,7 +88,7 @@ if uploaded_files:
             with col2:
                 st.subheader("Métricas Gerais")
                 st.metric("Total de Pedidos Enviados", len(df))
-                st.metric("Clientes Únicos", df['codigo cliente'].nunique())
+                st.metric("Clientes Únicos", df['Codigo Cliente'].nunique())
                 st.metric("Arquivos Processados", len(uploaded_files))
 
             # Opção de baixar os dados processados
