@@ -88,7 +88,7 @@ if uploaded_files:
             with col2:
                 st.subheader("Métricas Gerais")
                 st.metric("Total de Pedidos Enviados", len(df))
-                st.metric("Clientes Únicos", df['código do cliente'].nunique())
+                st.metric("Clientes Únicos", df['codigo cliente'].nunique())
                 st.metric("Arquivos Processados", len(uploaded_files))
 
             # Opção de baixar os dados processados
